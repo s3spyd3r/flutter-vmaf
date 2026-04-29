@@ -6,6 +6,9 @@ import '../bloc/vmaf_event.dart';
 import '../bloc/vmaf_state.dart';
 import '../../domain/entities/video_file.dart';
 import '../widgets/video_selector.dart';
+import '../widgets/calculate_button.dart';
+import '../widgets/vmaf_result_card.dart';
+import '../widgets/vmaf_progress_indicator.dart';
 
 class VmafPage extends StatefulWidget {
   const VmafPage({super.key});
@@ -71,106 +74,26 @@ class _VmafPageState extends State<VmafPage> {
                 },
               ),
               const SizedBox(height: 24),
-              _buildCalculateButton(context, state),
+              CalculateButton(
+                isEnabled: state is! VmafLoading && _referencePath != null && _distortedPath != null,
+                onPressed: () => _calculateVmaf(context),
+              ),
               if (state is VmafLoading) ...[
                 const SizedBox(height: 24),
-                _buildProgressIndicator(context, state),
+                VmafProgressIndicator(
+                  progress: state.progress,
+                  message: state.message,
+                  onCancel: () => _cancelVmaf(context),
+                ),
               ],
               if (state is VmafSuccess) ...[
                 const SizedBox(height: 24),
-                _buildResultCard(context, state),
+                VmafResultCard(score: state.result.score),
               ],
             ],
           ),
         );
       },
-    );
-  }
-
-  Widget _buildCalculateButton(BuildContext context, VmafState state) {
-    final isEnabled = state is! VmafLoading && _referencePath != null && _distortedPath != null;
-    return ElevatedButton.icon(
-      onPressed: isEnabled ? () => _calculateVmaf(context) : null,
-      icon: const Icon(Icons.play_arrow),
-      label: const Text('Calculate VMAF'),
-    );
-  }
-
-  Widget _buildResultCard(BuildContext context, VmafSuccess state) {
-    final score = state.result.score;
-    final color = _getScoreColor(score);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            Text(
-              'VMAF Score',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              score.toStringAsFixed(2),
-              style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: score / 100,
-              backgroundColor: Colors.grey[300],
-              valueColor: AlwaysStoppedAnimation(color),
-              minHeight: 8,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Color _getScoreColor(double score) {
-    if (score >= 80) return Colors.green;
-    if (score >= 60) return Colors.orange;
-    return Colors.red;
-  }
-
-  Widget _buildProgressIndicator(BuildContext context, VmafLoading state) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            Text(
-              state.message ?? 'Analyzing videos...',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: state.progress,
-              backgroundColor: Colors.grey[300],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'This may take a while depending on video duration',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).hintColor,
-                  ),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: () => _cancelVmaf(context),
-              icon: const Icon(Icons.stop),
-              label: const Text('Cancel'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -185,10 +108,10 @@ class _VmafPageState extends State<VmafPage> {
     final distortedName = p.basename(_distortedPath!);
 
     context.read<VmafBloc>().add(
-      CalculateVmafEvent(
-        distortedVideo: VideoFile(path: _distortedPath!, name: distortedName),
-        referenceVideo: VideoFile(path: _referencePath!, name: referenceName),
-      ),
-    );
+          CalculateVmafEvent(
+            distortedVideo: VideoFile(path: _distortedPath!, name: distortedName),
+            referenceVideo: VideoFile(path: _referencePath!, name: referenceName),
+          ),
+        );
   }
 }
