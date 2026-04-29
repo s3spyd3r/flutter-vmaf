@@ -1,0 +1,4 @@
+enum CalculationMethod {
+  ffmpeg,
+  netflixCli,
+}
