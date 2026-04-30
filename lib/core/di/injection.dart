@@ -81,6 +81,7 @@ VmafCalculatorBase _createCalculator(
       return VmafCliCalculator(
         vmafCliPath: vmafCliPath ?? '',
         vmafTempPath: vmafTempPath,
+        ffmpegPath: ffmpegPath,
       );
   }
 }

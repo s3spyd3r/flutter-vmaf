@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_vmaf/core/utils/logger.dart';
@@ -11,6 +12,7 @@ import 'vmaf_calculator_base.dart';
 class VmafCliCalculator implements VmafCalculatorBase {
   final String vmafCliPath;
   final String? vmafTempPath;
+  final String? ffmpegPath;
   Process? _process;
   final List<Process> _conversionProcesses = [];
   bool _cancelled = false;
@@ -19,6 +21,7 @@ class VmafCliCalculator implements VmafCalculatorBase {
   VmafCliCalculator({
     required this.vmafCliPath,
     this.vmafTempPath,
+    this.ffmpegPath,
   });
 
   @override
@@ -39,18 +42,20 @@ class VmafCliCalculator implements VmafCalculatorBase {
     
     _conversionProcesses.clear();
 
-    String? ffmpegPath;
     try {
       final vmafExe = File('$vmafCliPath\\vmaf.exe');
       if (!await vmafExe.exists()) {
         throw Exception('vmaf.exe not found at $vmafCliPath');
       }
-      
-      ffmpegPath = await _findFfmpegPath();
-      if (ffmpegPath == null) {
+
+      if (ffmpegPath == null || ffmpegPath!.isEmpty) {
         throw Exception('FFmpeg not found. Please configure FFmpeg path in settings.');
       }
-      
+      final ffmpegFile = File('$ffmpegPath\\ffmpeg.exe');
+      if (!await ffmpegFile.exists()) {
+        throw Exception('ffmpeg.exe not found at $ffmpegPath');
+      }
+
       Logger.log('Temp directory: ${tempDir.path}');
 
       if (!_isY4mFile(referencePath)) {
@@ -226,9 +231,12 @@ class VmafCliCalculator implements VmafCalculatorBase {
     ProgressCallback? onProgress,
     String videoName,
   ) async {
-    final ffmpegPath = await _findFfmpegPath();
-    if (ffmpegPath == null) {
+    if (ffmpegPath == null || ffmpegPath!.isEmpty) {
       throw Exception('FFmpeg not found. Please configure FFmpeg path in settings.');
+    }
+    final ffmpegFile = File('$ffmpegPath\\ffmpeg.exe');
+    if (!await ffmpegFile.exists()) {
+      throw Exception('ffmpeg.exe not found at $ffmpegPath');
     }
 
     Logger.log('Running: ffmpeg -i $inputPath -pix_fmt yuv420p -f yuv4mpegpipe $outputPath');
@@ -294,44 +302,18 @@ class VmafCliCalculator implements VmafCalculatorBase {
     return proc;
   }
 
-  Future<String?> _findFfmpegPath() async {
-    try {
-      final homeDir = Platform.environment['USERPROFILE'] ?? '';
-      final commonPaths = [
-        'C:\\Program Files\\ffmpeg\\bin',
-        'C:\\ffmpeg\\bin',
-        p.join(homeDir, 'ffmpeg\\bin'),
-      ];
-
-      for (final path in commonPaths) {
-        final file = File('$path\\ffmpeg.exe');
-        if (await file.exists()) {
-          return path;
-        }
-      }
-
-      final result = await Process.run('where', ['ffmpeg']);
-      Logger.log('Running: where ffmpeg');
-      if (result.exitCode == 0 && result.stdout.toString().isNotEmpty) {
-        final path = result.stdout.toString().trim().split('\n').first;
-        return p.dirname(path);
-      }
-    } catch (e) {
-      Logger.log('Error finding FFmpeg: $e');
-    }
-    return null;
-  }
-
   double _parseVmafScore(String jsonContent) {
     try {
-      final vmafMatch = RegExp(r'"vmaf":\s*([\d.]+)').firstMatch(jsonContent);
-      if (vmafMatch != null) {
-        return double.parse(vmafMatch.group(1)!);
-      }
-
-      final meanMatch = RegExp(r'"mean":\s*([\d.]+)').firstMatch(jsonContent);
-      if (meanMatch != null) {
-        return double.parse(meanMatch.group(1)!);
+      final json = jsonDecode(jsonContent) as Map<String, dynamic>;
+      final pooledMetrics = json['pooled_metrics'] as Map<String, dynamic>?;
+      if (pooledMetrics != null) {
+        final vmaf = pooledMetrics['vmaf'] as Map<String, dynamic>?;
+        if (vmaf != null) {
+          final mean = vmaf['mean'] as num?;
+          if (mean != null) {
+            return mean.toDouble();
+          }
+        }
       }
     } catch (e) {
       Logger.log('Error parsing VMAF score: $e');
