@@ -11,6 +11,11 @@ class VmafCalculator implements VmafCalculatorBase {
   Process? _process;
   bool _loggedComplete = false;
 
+  DateTime? _calcStartTime;
+  int _lastEtaFrame = 0;
+  String _lastEtaStr = ''; // Persist ETA string between updates
+  static const int _kEtaUpdateInterval = 500; // Recalculate ETA every X frames
+
   VmafCalculator({this.ffmpegPath});
 
   @override
@@ -19,6 +24,8 @@ class VmafCalculator implements VmafCalculatorBase {
     required String referencePath,
     ProgressCallback? onProgress,
   }) async {
+    _calcStartTime = null;
+    _lastEtaFrame = 0;
     if (ffmpegPath == null || ffmpegPath!.isEmpty) {
       throw Exception('No FFmpeg path configured');
     }
@@ -72,6 +79,7 @@ class VmafCalculator implements VmafCalculatorBase {
         '-',
       ],
     );
+    _calcStartTime = DateTime.now();
 
     int processedFrames = 0;
     final stderrBuffer = StringBuffer();
@@ -92,7 +100,26 @@ class VmafCalculator implements VmafCalculatorBase {
         }
 
         final progressStr = (progress * 100).toStringAsFixed(1);
-        onProgress?.call('Frame $processedFrames${estimatedFramesToProcess != null ? ' / ${estimatedFramesToProcess.round()}' : ''} ($progressStr%)', progress);
+        if (estimatedFramesToProcess != null && 
+            processedFrames > 0 && 
+            _calcStartTime != null &&
+            processedFrames - _lastEtaFrame >= _kEtaUpdateInterval) {
+          final elapsed = DateTime.now().difference(_calcStartTime!).inSeconds;
+          if (elapsed > 0) {
+            final remainingFrames = estimatedFramesToProcess - processedFrames;
+            if (remainingFrames > 0) {
+              final framesPerSecond = processedFrames / elapsed;
+              final remainingSeconds = remainingFrames / framesPerSecond;
+              final remainingMinutes = remainingSeconds / 60;
+              _lastEtaStr = ' | ETA: ${remainingMinutes.toStringAsFixed(1)} min';
+              _lastEtaFrame = processedFrames;
+            } else {
+              _lastEtaStr = ' | ETA: 0.0 min';
+              _lastEtaFrame = processedFrames;
+            }
+          }
+        }
+        onProgress?.call('Frame $processedFrames${estimatedFramesToProcess != null ? ' / ${estimatedFramesToProcess.round()}' : ''} ($progressStr%)$_lastEtaStr', progress);
 
         if (processedFrames > lastProgressUpdate + 1000) {
           lastProgressUpdate = processedFrames;
