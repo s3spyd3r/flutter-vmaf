@@ -36,20 +36,22 @@ class VmafBloc extends Bloc<VmafEvent, VmafState> {
 
     if (_isCancelled) {
       Logger.log('VMAF cancelled by user');
-      emit(const VmafCancelled());
+      if (!isClosed) emit(const VmafCancelled());
       return;
     }
 
-    result.fold(
-      (failure) {
-        Logger.logError('VMAF failed', failure.message);
-        emit(VmafError(failure.message));
-      },
-      (vmafResult) {
-        Logger.log('VMAF completed: ${vmafResult.score}');
-        emit(VmafSuccess(vmafResult));
-      },
-    );
+    if (!isClosed) {
+      result.fold(
+        (failure) {
+          Logger.logError('VMAF failed', failure.message);
+          emit(VmafError(failure.message));
+        },
+        (vmafResult) {
+          Logger.log('VMAF completed: ${vmafResult.score}');
+          emit(VmafSuccess(vmafResult));
+        },
+      );
+    }
   }
 
   Future<void> _onCancelVmaf(

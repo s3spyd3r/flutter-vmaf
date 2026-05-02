@@ -16,7 +16,6 @@ class VmafCliCalculator implements VmafCalculatorBase {
   Process? _process;
   final List<Process> _conversionProcesses = [];
   bool _cancelled = false;
-  Completer<void>? cancelledCompleter;
 
   VmafCliCalculator({
     required this.vmafCliPath,
@@ -33,8 +32,9 @@ class VmafCliCalculator implements VmafCalculatorBase {
     String refY4mPath = referencePath;
     String distY4mPath = distortedPath;
     _cancelled = false;
-    cancelledCompleter = Completer<void>();
-    
+
+    _process = null;
+
     final tempDir = await _getTempDirectory();
     final String tempDirPath = tempDir.path;
     final List<String> tempFilesToCleanup = [];
@@ -94,25 +94,29 @@ class VmafCliCalculator implements VmafCalculatorBase {
         }
       }
 
-      tempFilesToCleanup.add(outputJsonPath);
+      // outputJsonPath will be cleaned up in finally block
 
       Logger.log('Task 3/3: Calculating VMAF score');
       onProgress?.call('Calculating VMAF score...', 0.0);
       Logger.log('VMAF calculation started');
 
       final args = [
-        '--reference', refY4mPath,
-        '--distorted', distY4mPath,
+        '--reference', '"$refY4mPath"',
+        '--distorted', '"$distY4mPath"',
         '--threads', '${(getCpuThreadCount() / 2).ceil()}',
         '--json',
-        '--output', outputJsonPath,
+        '--output', '"$outputJsonPath"',
       ];
 
       Logger.log('Running: vmaf.exe ${args.join(' ')}');
-      _process = await Process.start(
-        '$vmafCliPath\\vmaf.exe',
-        args,
-      );
+      try {
+        _process = await Process.start(
+          '"$vmafCliPath\\vmaf.exe"',
+          args,
+        );
+      } catch (e) {
+        throw Exception('Failed to start VMAF process: $e');
+      }
 
       try {
         await for (final data in _process!.stderr) {
@@ -140,12 +144,11 @@ class VmafCliCalculator implements VmafCalculatorBase {
       if (await outputFile.exists()) {
         final jsonContent = await outputFile.readAsString();
         score = _parseVmafScore(jsonContent);
-        await outputFile.delete();
       } else {
         throw Exception('VMAF output file not found at $outputJsonPath');
       }
 
-      await _cleanupTempFiles(tempFilesToCleanup..add(outputJsonPath));
+      await _cleanupTempFiles(tempFilesToCleanup);
 
       onProgress?.call('Complete!', 1.0);
       Logger.log('VMAF CLI complete: score=$score');
@@ -156,7 +159,7 @@ class VmafCliCalculator implements VmafCalculatorBase {
         referencePath: referencePath,
       );
     } catch (e) {
-      await _cleanupTempFiles(tempFilesToCleanup..add(outputJsonPath));
+      await _cleanupTempFiles([...tempFilesToCleanup, outputJsonPath]);
       rethrow;
     }
   }
@@ -165,10 +168,6 @@ class VmafCliCalculator implements VmafCalculatorBase {
   Future<void> cancel() async {
     Logger.log('Cancellation requested');
     _cancelled = true;
-    
-    if (cancelledCompleter != null && !cancelledCompleter!.isCompleted) {
-      cancelledCompleter!.complete();
-    }
     
     for (final proc in List.from(_conversionProcesses)) {
       try {
@@ -240,10 +239,15 @@ class VmafCliCalculator implements VmafCalculatorBase {
     }
 
     Logger.log('Running: ffmpeg -i $inputPath -pix_fmt yuv420p -f yuv4mpegpipe $outputPath');
-    final proc = await Process.start(
-      '$ffmpegPath\\ffmpeg.exe',
-      ['-i', inputPath, '-pix_fmt', 'yuv420p', '-f', 'yuv4mpegpipe', outputPath],
-    );
+    late Process proc;
+    try {
+      proc = await Process.start(
+        '"$ffmpegPath\\ffmpeg.exe"',
+        ['-i', inputPath, '-pix_fmt', 'yuv420p', '-f', 'yuv4mpegpipe', outputPath],
+      );
+    } catch (e) {
+      throw Exception('Failed to start FFmpeg process: $e');
+    }
 
     _conversionProcesses.add(proc);
 
@@ -286,7 +290,7 @@ class VmafCliCalculator implements VmafCalculatorBase {
         final frame = int.parse(frameMatch.group(1)!);
         if (frame != lastReportedFrame || frame == 1) {
           lastReportedFrame = frame;
-          final effectiveTotal = totalFrames ?? 3000;
+          final effectiveTotal = (totalFrames == null || totalFrames == 0) ? 3000 : totalFrames;
           final progress = (frame / effectiveTotal.toDouble()).clamp(0.0, 1.0);
           onProgress?.call('Converting $videoName - Frame $frame', progress);
         }

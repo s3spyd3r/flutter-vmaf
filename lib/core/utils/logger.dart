@@ -63,4 +63,9 @@ class Logger {
       _logs.add('Logger write error: $e');
     }
   }
+
+  static Future<void> dispose() async {
+    await _streamController.close();
+    _logs.clear();
+  }
 }

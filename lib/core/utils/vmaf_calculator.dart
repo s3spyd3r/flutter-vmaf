@@ -18,14 +18,21 @@ class VmafCalculator implements VmafCalculatorBase {
 
   VmafCalculator({this.ffmpegPath});
 
+  void _resetState() {
+    _loggedComplete = false;
+    _process = null;
+    _calcStartTime = null;
+    _lastEtaFrame = 0;
+    _lastEtaStr = '';
+  }
+
   @override
   Future<VmafCalcResult> calculateVmaf({
     required String distortedPath,
     required String referencePath,
     ProgressCallback? onProgress,
   }) async {
-    _calcStartTime = null;
-    _lastEtaFrame = 0;
+    _resetState();
     if (ffmpegPath == null || ffmpegPath!.isEmpty) {
       throw Exception('No FFmpeg path configured');
     }
@@ -61,24 +68,28 @@ class VmafCalculator implements VmafCalculatorBase {
     Logger.log('Starting VMAF with n_threads=$vmafThreads');
 
     final outputJsonFile = toFFmpegPath('vmaf_output.json');
-    final lavfiFilter = "[0:v][1:v]libvmaf=n_threads=$vmafThreads:log_path=$outputJsonFile:log_fmt=json";
+    final lavfiFilter = '[0:v][1:v]libvmaf=n_threads=$vmafThreads:log_path="$outputJsonFile":log_fmt=json';
 
     final distortedPathFfmpeg = toFFmpegPath(distortedPath);
     final referencePathFfmpeg = toFFmpegPath(referencePath);
     Logger.log('Running: ffmpeg -threads $vmafThreads -i $distortedPathFfmpeg -i $referencePathFfmpeg -lavfi "$lavfiFilter" -f null -');
-    _process = await Process.start(
-      '$ffmpegPath\\ffmpeg.exe',
-      [
-        '-threads', '$vmafThreads',
-        '-an',
-        '-sn',
-        '-i', distortedPathFfmpeg,
-        '-i', referencePathFfmpeg,
-        '-lavfi', lavfiFilter,
-        '-f', 'null',
-        '-',
-      ],
-    );
+    try {
+      _process = await Process.start(
+        '"$ffmpegPath\\ffmpeg.exe"',
+        [
+          '-threads', '$vmafThreads',
+          '-an',
+          '-sn',
+          '-i', distortedPathFfmpeg,
+          '-i', referencePathFfmpeg,
+          '-lavfi', lavfiFilter,
+          '-f', 'null',
+          '-',
+        ],
+      );
+    } catch (e) {
+      throw Exception('Failed to start FFmpeg process: $e');
+    }
     _calcStartTime = DateTime.now();
 
     int processedFrames = 0;
@@ -141,28 +152,34 @@ class VmafCalculator implements VmafCalculatorBase {
     onProgress?.call('Reading VMAF score...', 0.95);
     double score = 0.0;
     final stderrContent = stderrBuffer.toString();
-    
-    final jsonMatch = RegExp(r'VMAF score:\s*([0-9.]+)').firstMatch(stderrContent);
-    if (jsonMatch != null) {
-      score = double.parse(jsonMatch.group(1)!);
-    } else {
-      final outputFile = File(outputJsonFile);
-      if (await outputFile.exists()) {
-        final jsonContent = await outputFile.readAsString();
-        
-        final vmafScoreMatch = RegExp(r'"VMAF_score":\s*([0-9.]+)').firstMatch(jsonContent);
-        if (vmafScoreMatch != null) {
-          score = double.parse(vmafScoreMatch.group(1)!);
-        } else {
-          final allVmafScores = RegExp(r'"vmaf":\s*([0-9.]+)').allMatches(jsonContent);
-          if (allVmafScores.isNotEmpty) {
-            double totalScore = 0;
-            for (final match in allVmafScores) {
-              totalScore += double.parse(match.group(1)!);
+
+    try {
+      final jsonMatch = RegExp(r'VMAF score:\s*([0-9.]+)').firstMatch(stderrContent);
+      if (jsonMatch != null) {
+        score = double.parse(jsonMatch.group(1)!);
+      } else {
+        final outputFile = File(outputJsonFile);
+        if (await outputFile.exists()) {
+          final jsonContent = await outputFile.readAsString();
+
+          final vmafScoreMatch = RegExp(r'"VMAF_score":\s*([0-9.]+)').firstMatch(jsonContent);
+          if (vmafScoreMatch != null) {
+            score = double.parse(vmafScoreMatch.group(1)!);
+          } else {
+            final allVmafScores = RegExp(r'"vmaf":\s*([0-9.]+)').allMatches(jsonContent);
+            if (allVmafScores.isNotEmpty) {
+              double totalScore = 0;
+              for (final match in allVmafScores) {
+                totalScore += double.parse(match.group(1)!);
+              }
+              score = totalScore / allVmafScores.length;
             }
-            score = totalScore / allVmafScores.length;
           }
         }
+      }
+    } finally {
+      final outputFile = File(outputJsonFile);
+      if (await outputFile.exists()) {
         await outputFile.delete();
       }
     }
@@ -170,6 +187,7 @@ class VmafCalculator implements VmafCalculatorBase {
     onProgress?.call('Complete!', 1.0);
     Logger.log('VMAF complete: score=$score');
 
+    _process = null;
     return VmafCalcResult(
       score: score,
       distortedPath: distortedPath,

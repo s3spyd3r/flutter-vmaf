@@ -34,10 +34,12 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     final result = await getSettings();
 
     result.fold(
-      (failure) => emit(SettingsError(failure.message)),
+      (failure) {
+        if (!isClosed) emit(SettingsError(failure.message));
+      },
       (settings) {
         _currentSettings = settings;
-        emit(SettingsLoaded(settings));
+        if (!isClosed) emit(SettingsLoaded(settings));
       },
     );
   }
@@ -69,11 +71,15 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     final result = await saveSettings(settings);
 
     result.fold(
-      (failure) => emit(SettingsError(failure.message)),
+      (failure) {
+        if (!isClosed) emit(SettingsError(failure.message));
+      },
       (savedSettings) {
         _currentSettings = settings;
-        emit(SettingsLoaded(settings));
-        di.updateCalculator(settings);
+        if (!isClosed) {
+          emit(SettingsLoaded(settings));
+          di.updateCalculator(settings);
+        }
       },
     );
   }
@@ -88,11 +94,15 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     final result = await saveSettings(settings);
 
     result.fold(
-      (failure) => emit(SettingsError(failure.message)),
+      (failure) {
+        if (!isClosed) emit(SettingsError(failure.message));
+      },
       (savedSettings) {
         _currentSettings = settings;
-        emit(SettingsLoaded(settings));
-        di.updateCalculator(settings);
+        if (!isClosed) {
+          emit(SettingsLoaded(settings));
+          di.updateCalculator(settings);
+        }
       },
     );
   }
@@ -121,11 +131,15 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     final result = await saveSettings(settings);
 
     result.fold(
-      (failure) => emit(SettingsError(failure.message)),
+      (failure) {
+        if (!isClosed) emit(SettingsError(failure.message));
+      },
       (savedSettings) {
         _currentSettings = settings;
-        emit(SettingsLoaded(settings));
-        di.updateCalculator(settings);
+        if (!isClosed) {
+          emit(SettingsLoaded(settings));
+          di.updateCalculator(settings);
+        }
       },
     );
   }
